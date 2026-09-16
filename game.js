@@ -89,7 +89,10 @@ const MAX_START_LEVEL = 15;
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let nextPowerAt, pendingPower, freezeMs, powerLabel;
+// startLevel es el nivel de la partida en curso; pendingStartLevel es el elegido
+// en el menú, que solo se aplica en la siguiente partida (init()).
 let startLevel = 1;
+let pendingStartLevel = 1;
 
 function levelSpeed(lvl) {
   return Math.max(100, 1000 - (lvl - 1) * 90);
@@ -455,6 +458,7 @@ function init() {
   board = createBoard();
   score = 0;
   lines = 0;
+  startLevel = pendingStartLevel;
   level = startLevel;
   paused = false;
   gameOver = false;
@@ -475,8 +479,11 @@ function init() {
 }
 
 document.addEventListener('keydown', e => {
-  // ---- Menú de pausa: bloquea el resto de inputs mientras está abierto ----
+  // ---- Menú de pausa: bloquea los inputs del juego mientras está abierto ----
   if (paused && e.code !== 'KeyP' && e.code !== 'Escape') {
+    // deja pasar la navegación con teclado: Tab, y cualquier tecla dentro del menú
+    if (e.code === 'Tab') return;
+    if (!pauseMenu.hidden && pauseMenu.contains(e.target)) return;
     e.preventDefault();
     return;
   }
@@ -515,9 +522,9 @@ controlsBtn.addEventListener('click', () => {
   controlsBtn.textContent = controlsList.hidden ? 'Ver controles' : 'Ocultar controles';
 });
 startLevelSelect.addEventListener('change', () => {
-  startLevel = clampStartLevel(startLevelSelect.value);
-  startLevelSelect.value = String(startLevel);
-  localStorage.setItem(START_LEVEL_KEY, String(startLevel));
+  pendingStartLevel = clampStartLevel(startLevelSelect.value);
+  startLevelSelect.value = String(pendingStartLevel);
+  localStorage.setItem(START_LEVEL_KEY, String(pendingStartLevel));
 });
 
 function clampStartLevel(value) {
@@ -526,8 +533,8 @@ function clampStartLevel(value) {
   return Math.min(MAX_START_LEVEL, Math.max(1, n));
 }
 
-startLevel = clampStartLevel(localStorage.getItem(START_LEVEL_KEY));
-startLevelSelect.value = String(startLevel);
+pendingStartLevel = clampStartLevel(localStorage.getItem(START_LEVEL_KEY));
+startLevelSelect.value = String(pendingStartLevel);
 
 document.body.classList.toggle('light-theme', localStorage.getItem(THEME_KEY) === 'light');
 themeToggle.checked = document.body.classList.contains('light-theme');

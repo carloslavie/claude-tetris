@@ -306,6 +306,6 @@ kbd {
 }
 
 /* el id de #pause-menu gana al display:none del atributo hidden */
-[hidden] {
-  display: none !important;
+#pause-menu[hidden] {
+  display: none;
 }
