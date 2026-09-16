@@ -259,3 +259,61 @@ kbd {
 #restart-btn:hover {
   background: var(--restart-hover-bg);
 }
+
+/* ---- Skins / temas visuales ---- */
+.skin-picker select {
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 6px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.skin-picker select:focus {
+  outline: 1px solid var(--value-color);
+}
+
+/* Retro: paleta por defecto, no redefine nada. */
+
+/* Neon: tablero negro y rejilla muy tenue en ambos temas. */
+body.skin-neon {
+  --board-bg: #000000;
+  --grid-line: #16161f;
+  --board-border: #3a2a5a;
+}
+
+body.skin-neon.light-theme {
+  --board-bg: #05050a;
+  --grid-line: #1e1e2c;
+  --board-border: #9a8ac0;
+}
+
+/* Pastel: fondos suaves y bordes claros. */
+body.skin-pastel {
+  --board-bg: #23232f;
+  --grid-line: #2e2e3d;
+  --board-border: #4a4a63;
+}
+
+body.skin-pastel.light-theme {
+  --board-bg: #fdfbff;
+  --grid-line: #e8e4f0;
+  --board-border: #cfc7e0;
+}
+
+/* Pixel art: rejilla marcada, estilo retícula. */
+body.skin-pixel {
+  --board-bg: #15151d;
+  --grid-line: #2b2b3a;
+  --board-border: #3d3d55;
+}
+
+body.skin-pixel.light-theme {
+  --board-bg: #f7f7fb;
+  --grid-line: #d2d2e2;
+  --board-border: #b8b8cf;
+}
