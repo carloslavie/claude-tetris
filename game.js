@@ -22,6 +22,55 @@ const COLORS = [
   '#eceff1', // COMODÍN
 ];
 
+// ---- Skins / temas visuales ----
+// Cada paleta debe tener EXACTAMENTE la misma longitud que COLORS y null en el índice 0,
+// porque los índices son los tipos de pieza (1-8 normales, 9-13 power-ups, 14 comodín).
+const SKINS = {
+  retro: {
+    label: 'Retro',
+    style: 'flat',
+    colors: COLORS,
+  },
+  neon: {
+    label: 'Neon',
+    style: 'glow',
+    colors: [
+      null,
+      '#00e5ff', '#ffea00', '#d500f9', '#00e676', '#ff1744',
+      '#2979ff', '#ff9100', '#cfd8dc', '#ff3d00', '#ffff00',
+      '#e040fb', '#00ff7f', '#18ffff', '#ffffff',
+    ],
+  },
+  pastel: {
+    label: 'Pastel',
+    style: 'round',
+    colors: [
+      null,
+      '#a8e6e4', '#ffe9a8', '#d8bfe8', '#bfe3c0', '#f5b5b5',
+      '#c3d9f5', '#ffd6ab', '#d6dde1', '#ffc2ae', '#fff3b0',
+      '#dcc0ea', '#bfe6c5', '#bfe4f5', '#f3f5f7',
+    ],
+  },
+  pixel: {
+    label: 'Pixel art',
+    style: 'pixel',
+    colors: COLORS,
+  },
+};
+
+const SKIN_KEY = 'tetris-skin';
+const DEFAULT_SKIN = 'retro';
+let skin = SKINS[DEFAULT_SKIN];
+
+// Retícula 4x4 determinista para la textura de la skin "pixel art".
+// 1 = sombra, 2 = brillo, 0 = sin marca.
+const PIXEL_PATTERN = [
+  [2, 0, 1, 0],
+  [0, 1, 0, 2],
+  [1, 0, 2, 0],
+  [0, 2, 0, 1],
+];
+
 const PIECES = [
   null,
   [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
@@ -74,6 +123,7 @@ const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggle = document.getElementById('theme-toggle');
 const powerEl = document.getElementById('power');
+const skinSelect = document.getElementById('skin-select');
 
 const THEME_KEY = 'tetris-theme';
 
@@ -298,13 +348,51 @@ function updateHUD() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const color = skin.colors[colorIndex] || COLORS[colorIndex];
+  const px = x * size + 1;
+  const py = y * size + 1;
+  const ps = size - 2;
   context.globalAlpha = alpha ?? 1;
   context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+
+  switch (skin.style) {
+    case 'glow':
+      context.shadowColor = color;
+      context.shadowBlur = size * 0.4;
+      context.fillRect(px, py, ps, ps);
+      context.shadowBlur = 0;
+      context.shadowColor = 'transparent';
+      context.fillStyle = 'rgba(255,255,255,0.12)';
+      context.fillRect(px, py, ps, 4);
+      break;
+    case 'round':
+      if (typeof context.roundRect === 'function') {
+        context.beginPath();
+        context.roundRect(px, py, ps, ps, size * 0.25);
+        context.fill();
+      } else {
+        context.fillRect(px, py, ps, ps);
+      }
+      break;
+    case 'pixel': {
+      context.fillRect(px, py, ps, ps);
+      const sub = ps / 4;
+      for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+          const v = PIXEL_PATTERN[r][c];
+          if (!v) continue;
+          context.fillStyle = v === 1 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)';
+          context.fillRect(px + c * sub, py + r * sub, sub, sub);
+        }
+      }
+      break;
+    }
+    default:
+      context.fillRect(px, py, ps, ps);
+      context.fillStyle = 'rgba(255,255,255,0.12)';
+      context.fillRect(px, py, ps, 4);
+  }
+
   // icono de power-up / comodín
   const icon = POWER_ICONS[colorIndex];
   if (icon) {
@@ -426,6 +514,19 @@ function setTheme(isLight) {
   drawNext();
 }
 
+// ---- Skins: aplicar y persistir ----
+function applySkin(name, repaint) {
+  const key = SKINS[name] ? name : DEFAULT_SKIN;
+  skin = SKINS[key];
+  for (const s of Object.keys(SKINS)) document.body.classList.toggle('skin-' + s, s === key);
+  if (skinSelect) skinSelect.value = key;
+  try { localStorage.setItem(SKIN_KEY, key); } catch (e) { /* almacenamiento no disponible */ }
+  if (repaint) {
+    draw();
+    drawNext();
+  }
+}
+
 function init() {
   if (animId !== null && animId !== undefined) cancelAnimationFrame(animId);
   animId = null;
@@ -476,8 +577,17 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', init);
 themeToggle.addEventListener('change', () => setTheme(themeToggle.checked));
+if (skinSelect) skinSelect.addEventListener('change', () => {
+  applySkin(skinSelect.value, true);
+  // sin blur el select mantiene el foco y las flechas del juego cambiarían la skin
+  skinSelect.blur();
+});
 
 document.body.classList.toggle('light-theme', localStorage.getItem(THEME_KEY) === 'light');
 themeToggle.checked = document.body.classList.contains('light-theme');
+// sin repintar: board/current aún no existen antes de init()
+let savedSkin = DEFAULT_SKIN;
+try { savedSkin = localStorage.getItem(SKIN_KEY) || DEFAULT_SKIN; } catch (e) { /* ignorar */ }
+applySkin(savedSkin, false);
 
 init();
