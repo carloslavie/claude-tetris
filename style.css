@@ -161,6 +161,17 @@ body {
   letter-spacing: 1px;
 }
 
+.value-sm {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.powerups .icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 #next-canvas {
   display: block;
   border: 1px solid var(--board-border);

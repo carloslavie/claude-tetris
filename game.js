@@ -14,6 +14,12 @@ const COLORS = [
   '#90caf9', // J - azul pálido
   '#ffb74d', // L - orange
   '#b0bec5', // TUERCA - gris acero
+  '#ff7043', // BOMBA
+  '#ffee58', // RAYO
+  '#ab47bc', // TINTE
+  '#66bb6a', // GRAVEDAD
+  '#4fc3f7', // CONGELAR
+  '#eceff1', // COMODÍN
 ];
 
 const PIECES = [
@@ -26,9 +32,34 @@ const PIECES = [
   [[6,0,0],[6,6,6],[0,0,0]],                  // J
   [[0,0,7],[7,7,7],[0,0,0]],                  // L
   [[8,8,8],[8,0,8],[8,8,8]],                  // TUERCA (3x3 con hueco)
+  [[9]],                                       // BOMBA
+  [[10]],                                      // RAYO
+  [[11]],                                      // TINTE
+  [[12]],                                      // GRAVEDAD
+  [[13]],                                      // CONGELAR
+  null,                                        // COMODÍN: no es una pieza jugable
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
+
+// ---- Power-ups ----
+const POWER_BASE = 9;   // los tipos 9..13 son piezas power-up de 1x1
+const WILD = 14;        // bloque comodín generado por TINTE
+const POWER_LINES = 5;  // cada cuántas líneas aparece un power-up
+const FREEZE_MS = 5000;
+const POWER_SCORE = 10; // puntos por celda destruida
+
+const POWERUPS = [
+  { type: 9,  label: 'BOMBA',    icon: '💣' },
+  { type: 10, label: 'RAYO',     icon: '⚡' },
+  { type: 11, label: 'TINTE',    icon: '🎨' },
+  { type: 12, label: 'GRAVEDAD', icon: '⬇' },
+  { type: 13, label: 'CONGELAR', icon: '❄' },
+];
+
+const POWER_ICONS = {};
+for (const p of POWERUPS) POWER_ICONS[p.type] = p.icon;
+POWER_ICONS[WILD] = '★';
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -42,10 +73,12 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const powerEl = document.getElementById('power');
 
 const THEME_KEY = 'tetris-theme';
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let nextPowerAt, pendingPower, freezeMs, powerLabel;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -55,6 +88,11 @@ function randomPiece() {
   const type = Math.floor(Math.random() * 8) + 1;
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+}
+
+function randomPowerPiece() {
+  const { type } = POWERUPS[Math.floor(Math.random() * POWERUPS.length)];
+  return { type, shape: [[type]], x: Math.floor(COLS / 2), y: 0 };
 }
 
 function collide(shape, ox, oy) {
@@ -98,7 +136,7 @@ function merge() {
         board[current.y + r][current.x + c] = current.shape[r][c];
 }
 
-function clearLines() {
+function collapseFullRows() {
   let cleared = 0;
   for (let r = ROWS - 1; r >= 0; r--) {
     if (board[r].every(v => v !== 0)) {
@@ -108,11 +146,42 @@ function clearLines() {
       r++;
     }
   }
+  return cleared;
+}
+
+// Elimina todos los comodines del tablero. Devuelve true si borró alguno.
+function removeWilds() {
+  let found = false;
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] === WILD) { board[r][c] = 0; found = true; }
+  return found;
+}
+
+// Hace caer cada columna sobre sí misma, eliminando los huecos.
+function compactBoard() {
+  for (let c = 0; c < COLS; c++) {
+    const stack = [];
+    for (let r = ROWS - 1; r >= 0; r--) if (board[r][c]) stack.push(board[r][c]);
+    for (let r = ROWS - 1, i = 0; r >= 0; r--, i++) board[r][c] = stack[i] || 0;
+  }
+}
+
+function clearLines() {
+  let cleared = collapseFullRows();
+  if (cleared && removeWilds()) {
+    compactBoard();
+    cleared += collapseFullRows();
+  }
   if (cleared) {
     lines += cleared;
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+    while (lines >= nextPowerAt) {
+      pendingPower = true;
+      nextPowerAt += POWER_LINES;
+    }
     updateHUD();
   }
 }
@@ -141,24 +210,90 @@ function softDrop() {
 }
 
 function lockPiece() {
-  merge();
+  if (current.type >= POWER_BASE) applyPower(current.type, current.x, current.y);
+  else merge();
   clearLines();
   spawn();
 }
 
+// Vacía una celda si está dentro del tablero y tenía bloque. Devuelve 1 si la destruyó.
+function clearCell(x, y) {
+  if (x < 0 || x >= COLS || y < 0 || y >= ROWS || !board[y][x]) return 0;
+  board[y][x] = 0;
+  return 1;
+}
+
+// Tiñe de comodín todos los bloques del color más abundante del tablero.
+function dyeMostCommon() {
+  const counts = new Array(COLORS.length).fill(0);
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] && board[r][c] !== WILD) counts[board[r][c]]++;
+
+  let best = 0;
+  for (let t = 1; t < counts.length; t++) if (counts[t] > counts[best]) best = t;
+  if (!best) return;
+
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] === best) board[r][c] = WILD;
+}
+
+function applyPower(type, x, y) {
+  const power = POWERUPS[type - POWER_BASE];
+  let destroyed = 0;
+
+  switch (type) {
+    case 9: // BOMBA: área 3x3
+      for (let r = y - 1; r <= y + 1; r++)
+        for (let c = x - 1; c <= x + 1; c++)
+          destroyed += clearCell(c, r);
+      break;
+    case 10: // RAYO: fila y columna completas
+      for (let c = 0; c < COLS; c++) destroyed += clearCell(c, y);
+      for (let r = 0; r < ROWS; r++) destroyed += clearCell(x, r);
+      break;
+    case 11: // TINTE: comodines
+      dyeMostCommon();
+      break;
+    case 12: // GRAVEDAD: compacta los huecos
+      compactBoard();
+      break;
+    case 13: // CONGELAR: 5s sin caída
+      freezeMs = FREEZE_MS;
+      break;
+  }
+
+  score += destroyed * POWER_SCORE;
+  powerLabel = power.icon + ' ' + power.label;
+  updateHUD();
+}
+
 function spawn() {
   current = next;
-  next = randomPiece();
+  next = pendingPower ? randomPowerPiece() : randomPiece();
+  pendingPower = false;
   if (collide(current.shape, current.x, current.y)) {
     endGame();
   }
   drawNext();
 }
 
+function powerText() {
+  if (freezeMs > 0) return `❄ ${(freezeMs / 1000).toFixed(1)}s`;
+  const queued = [current, next].find(p => p && p.type >= POWER_BASE);
+  if (queued) {
+    const power = POWERUPS[queued.type - POWER_BASE];
+    return `${power.icon} ${power.label}`;
+  }
+  return powerLabel || '—';
+}
+
 function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  powerEl.textContent = powerText();
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
@@ -170,6 +305,15 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
   // highlight
   context.fillStyle = 'rgba(255,255,255,0.12)';
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  // icono de power-up / comodín
+  const icon = POWER_ICONS[colorIndex];
+  if (icon) {
+    context.fillStyle = '#1a1a25';
+    context.font = `${Math.round(size * 0.6)}px system-ui, sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(icon, x * size + size / 2, y * size + size / 2 + 1);
+  }
   context.globalAlpha = 1;
 }
 
@@ -254,13 +398,19 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
-  dropAccum += dt;
-  if (dropAccum >= dropInterval) {
+  if (freezeMs > 0) {
+    freezeMs = Math.max(0, freezeMs - dt);
     dropAccum = 0;
-    if (!collide(current.shape, current.x, current.y + 1)) {
-      current.y++;
-    } else {
-      lockPiece();
+    updateHUD();
+  } else {
+    dropAccum += dt;
+    if (dropAccum >= dropInterval) {
+      dropAccum = 0;
+      if (!collide(current.shape, current.x, current.y + 1)) {
+        current.y++;
+      } else {
+        lockPiece();
+      }
     }
   }
   draw();
@@ -287,6 +437,10 @@ function init() {
   gameOver = false;
   dropInterval = 1000;
   dropAccum = 0;
+  nextPowerAt = POWER_LINES;
+  pendingPower = false;
+  freezeMs = 0;
+  powerLabel = '';
   lastTime = performance.now();
   next = randomPiece();
   spawn();
