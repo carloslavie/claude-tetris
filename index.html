@@ -72,6 +72,23 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
+
+        <!-- ---- Records ---- -->
+        <div id="save-score" class="hidden">
+          <input type="text" id="player-name" maxlength="12" placeholder="Tu nombre" />
+          <button id="save-score-btn">Guardar</button>
+        </div>
+
+        <div id="scores">
+          <span class="scores-title">RECORDS</span>
+          <ol id="score-list"></ol>
+          <p class="scores-stats">
+            <span>MEJOR COMBO <b id="best-combo">0</b></span>
+            <span>LÍNEAS MÁX <b id="best-lines">0</b></span>
+          </p>
+          <button id="reset-scores">Borrar records</button>
+        </div>
+
         <button id="restart-btn">Reiniciar</button>
       </div>
     </div>
