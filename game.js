@@ -194,6 +194,9 @@ function draw() {
     for (let c = 0; c < COLS; c++)
       drawBlock(ctx, c, r, board[r][c], BLOCK);
 
+  // tras el game over la pieza actual colisiona en el spawn: no dibujarla
+  if (gameOver) return;
+
   // ghost
   const gy = ghostY();
   for (let r = 0; r < current.shape.length; r++)
@@ -220,7 +223,8 @@ function drawNext() {
 
 function endGame() {
   gameOver = true;
-  cancelAnimationFrame(animId);
+  if (animId !== null) cancelAnimationFrame(animId);
+  animId = null;
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
   overlay.classList.remove('hidden');
@@ -230,10 +234,12 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
+    overlay.classList.add('hidden');
     lastTime = performance.now();
     loop(lastTime);
   } else {
-    cancelAnimationFrame(animId);
+    if (animId !== null) cancelAnimationFrame(animId);
+    animId = null;
     overlayTitle.textContent = 'PAUSA';
     overlayScore.textContent = '';
     overlay.classList.remove('hidden');
@@ -253,10 +259,13 @@ function loop(ts) {
     }
   }
   draw();
+  if (gameOver || paused) { animId = null; return; }
   animId = requestAnimationFrame(loop);
 }
 
 function init() {
+  if (animId !== null && animId !== undefined) cancelAnimationFrame(animId);
+  animId = null;
   board = createBoard();
   score = 0;
   lines = 0;
@@ -270,7 +279,6 @@ function init() {
   spawn();
   updateHUD();
   overlay.classList.add('hidden');
-  cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
